@@ -41,9 +41,9 @@ FIX="$HERE/build/pscheck/fixtures"
 CLASSES="$HERE/build/pscheck/classes"
 STUB="$FIX/loopback-stub.ps1"
 TOOLCHAIN="$ROOT/toolchain/vendor"
-JAVA="$TOOLCHAIN/jre/bin/java"
-ECJ="$TOOLCHAIN/ecj.jar"
-[ -x "$JAVA" ] || JAVA="$(command -v java || true)"
+case "$CS" in /*) ;; *) CS="$PWD/$CS" ;; esac
+JAVA=""
+ECJ=""
 export BTAUDIO_WINDOWS_CACHE="$CS"
 export DOTNET_ROOT="$CS"
 export DOTNET_CLI_HOME="$CS/dotnet-cli"
@@ -63,15 +63,26 @@ for t in socat python3; do
     command -v "$t" >/dev/null || { echo "$t is required"; exit 2; }
 done
 [ -f "$CSCHECK" ] || { echo "cscheck.sh missing: $CSCHECK"; exit 2; }
+# Reuse installed tools; prepare-tools adds only JRE + ECJ when a Java
+# compiler/runtime is missing, then provisions Windows test dependencies.
+bash "$HERE/prepare-tools.sh" ensure || {
+    echo "could not provision Windows test tools" >&2
+    exit 2
+}
+if [ -x "$CS/java/jre/bin/java" ] && [ -s "$CS/java/ecj.jar" ]; then
+    JAVA="$CS/java/jre/bin/java"; ECJ="$CS/java/ecj.jar"
+elif [ -x "$TOOLCHAIN/jre/bin/java" ] && [ -s "$TOOLCHAIN/ecj.jar" ]; then
+    JAVA="$TOOLCHAIN/jre/bin/java"; ECJ="$TOOLCHAIN/ecj.jar"
+else
+    JAVA="$(command -v java || true)"
+fi
 [ -n "$JAVA" ] || { echo "a Java runtime is required" >&2; exit 2; }
 if ! command -v javac >/dev/null 2>&1; then
     [ -x "$JAVA" ] && [ -s "$ECJ" ] || {
-        echo "need javac or the repository toolchain's JRE + ECJ (run toolchain/setup.sh)" >&2
+        echo "need javac or JRE + Eclipse ECJ (prepare-tools.sh ensure)" >&2
         exit 2
     }
 fi
-# Reuse any provisioned SDK, filling the dedicated external cache if needed.
-bash "$HERE/prepare-tools.sh" ensure
 command -v pwsh >/dev/null 2>&1 \
     && echo "pwsh $(pwsh -NoProfile -c '$PSVersionTable.PSVersion.ToString()' 2>/dev/null)" \
     || bad "could not obtain a PowerShell runtime"

@@ -14,6 +14,17 @@ ACTION="${1:-ensure}"
 
 case "$ACTION" in
   ensure|setup)
+    # jdk4py supplies a small JRE and npm's Eclipse ECJ bundle supplies a
+    # javac replacement. The serial-test helpers need no Android SDK tools.
+    HAVE_JRE_ECJ=0
+    if { [ -x "$CACHE/java/jre/bin/java" ] && [ -s "$CACHE/java/ecj.jar" ]; } \
+       || { [ -x "$ROOT/toolchain/vendor/jre/bin/java" ] && [ -s "$ROOT/toolchain/vendor/ecj.jar" ]; }; then
+      HAVE_JRE_ECJ=1
+    fi
+    if { ! command -v javac >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; } \
+       && [ "$HAVE_JRE_ECJ" -eq 0 ]; then
+      bash "$ROOT/toolchain/setup.sh" --java-only --vendor "$CACHE/java"
+    fi
     bash "$HERE/cscheck.sh" bootstrap
     mkdir -p "$CACHE/pwsh"
     export DOTNET_ROOT="$CACHE"
@@ -36,9 +47,14 @@ case "$ACTION" in
     if [ -x "$CACHE/dotnet" ]; then "$CACHE/dotnet" --version; else echo ".NET SDK: not cached"; fi
     if command -v dotnet >/dev/null 2>&1; then dotnet --list-sdks; else echo "system dotnet: not found"; fi
     if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'; else echo "pwsh: not found"; fi
-    for tool in python3 socat javac; do
+    for tool in python3 socat javac java; do
       if command -v "$tool" >/dev/null 2>&1; then printf '%-8s %s\n' "$tool" "$(command -v "$tool")"; else printf '%-8s %s\n' "$tool" "not found"; fi
     done
+    if [ -x "$CACHE/java/jre/bin/java" ] && [ -s "$CACHE/java/ecj.jar" ]; then
+      echo "JRE + ECJ fallback: cached in $CACHE/java"
+    elif [ -x "$ROOT/toolchain/vendor/jre/bin/java" ] && [ -s "$ROOT/toolchain/vendor/ecj.jar" ]; then
+      echo "JRE + ECJ fallback: $ROOT/toolchain/vendor"
+    fi
     ;;
   clean)
     CACHE="${CACHE%/}"
@@ -64,13 +80,13 @@ case "$ACTION" in
     cat <<'EOF'
 Usage: bash btaudio/windows/prepare-tools.sh [ensure|status|clean]
 
-  ensure  Reuse or fetch the pinned .NET SDK, net48 reference assemblies,
-          and PowerShell 7.4.6 (default).
+  ensure  Provision Java/ECJ from PyPI/npm when needed, plus the pinned .NET SDK,
+          net48 reference assemblies, and PowerShell 7.4.6 (default).
   status  Report installed tools without downloading anything.
   clean   Remove only BTAUDIO_WINDOWS_CACHE and ignored harness build output.
 
-Set BTAUDIO_WINDOWS_CACHE to move the external cache. ensure requires network
-access to the pinned .NET SDK and NuGet package URLs when those tools are absent.
+Set BTAUDIO_WINDOWS_CACHE to move the external cache. ensure needs PyPI/npm for
+JRE/ECJ and the .NET SDK/NuGet sources for Windows tools when not already installed.
 EOF
     ;;
   *) echo "unknown action: $ACTION (expected ensure, status, or clean)" >&2; exit 2 ;;

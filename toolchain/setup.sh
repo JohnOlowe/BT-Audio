@@ -2,11 +2,13 @@
 # setup.sh -- build an Android Java + XML toolchain out of nothing but PyPI,
 # npm and GitHub, with no root, no apt, no SDK manager and no Maven.
 #
-#   bash toolchain/setup.sh [--api 34] [--vendor DIR]
+#   bash toolchain/setup.sh [--api 34] [--vendor DIR] [--java-only]
 #
-# Everything lands in toolchain/vendor/ (gitignored). Re-runnable; already
-# downloaded artefacts are kept. Each tool is executed at the end of its step,
-# so a silent failure is impossible.
+# Everything lands in toolchain/vendor/ (gitignored) or the requested vendor
+# directory. Re-runnable; already downloaded artefacts are kept. Each tool is
+# executed at the end of its step, so a silent failure is impossible.
+# --java-only provisions just jdk4py's JRE and Eclipse ECJ (a javac replacement),
+# which is enough for the Windows wire-test helpers without downloading Android tools.
 set -euo pipefail
 
 API=34
@@ -14,6 +16,7 @@ API=34
 # *reference* for check_api.py (see step 6b): compiling needs API 34, but proving that
 # nothing uses a post-19 API needs API 19's own jar.
 REF_API=19
+JAVA_ONLY=0
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENDOR="$HERE/vendor"
 while [ $# -gt 0 ]; do
@@ -21,7 +24,8 @@ while [ $# -gt 0 ]; do
     --api) API="$2"; shift 2 ;;
     --ref-api) REF_API="$2"; shift 2 ;;
     --vendor) VENDOR="$2"; shift 2 ;;
-    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    --java-only) JAVA_ONLY=1; shift ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -94,6 +98,11 @@ fi
 "$VENDOR/jre/bin/java" -jar "$VENDOR/ecj.jar" -help 2>&1 | sed -n "1p" | grep -q "Eclipse Compiler" \
   || die "ecj.jar is not runnable"
 ok "$("$VENDOR/jre/bin/java" -jar "$VENDOR/ecj.jar" -help 2>&1 | sed -n '1p')"
+
+if [ "$JAVA_ONLY" = 1 ]; then
+  say "Java-only toolchain ready (JRE + Eclipse ECJ)"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 say "3/7 dexer + signer + platform jar  (npm: @drxiaozhi/minapk)"

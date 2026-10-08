@@ -269,11 +269,13 @@ bash pscheck/guicheck.sh
 bash btaudio/windows/prepare-tools.sh clean
 ```
 
-The setup reuses .NET SDK 8.0.425 if installed; otherwise it downloads the pinned SDK
-and verifies its SHA-512 before extraction. It fetches the .NET Framework 4.8 reference
-assemblies and, only when needed, installs pinned PowerShell 7.4.6 into the external
-cache. `clean` removes that cache plus ignored harness outputs, not source or checked-in
-binaries. `socat`, `python3`, and a JDK must already be present.
+The setup provisions a JRE plus Eclipse ECJ from PyPI/npm when `javac` or a Java
+runtime is unavailable; this Java-only route does not fetch Android build tools. It then reuses
+.NET SDK 8.0.425 if installed, or downloads the pinned SDK and verifies its SHA-512
+before extraction. It fetches the .NET Framework 4.8 reference assemblies and, only
+when needed, installs pinned PowerShell 7.4.6 into the external cache. `clean` removes
+that cache plus ignored harness outputs, not source or checked-in binaries. `socat` and
+`python3` must already be present.
 
 Bugs these harnesses caught that reading the code would not have:
 
