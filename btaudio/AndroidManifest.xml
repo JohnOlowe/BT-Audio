@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bluetooth audio receiver: the phone plays audio the PC sends over RFCOMM.
+
+  BLUETOOTH / BLUETOOTH_ADMIN are capped at maxSdkVersion 30 because API 31
+  replaced them with the runtime BLUETOOTH_CONNECT; declaring both without the
+  cap makes the Play console and every lint run flag a permission the app never
+  uses on modern devices.
+
+  FOREGROUND_SERVICE_CONNECTED_DEVICE is required from API 34 to start a
+  foreground service of type connectedDevice, and connectedDevice is the type
+  that actually fits: the service is holding a Bluetooth socket, which is the
+  declared use case for it. Using mediaPlayback here would be a lie and would
+  be rejected on 14.
+-->
+<!--
+  versionCode 2: the log no longer fights the reader. v1 pinned the log to its
+  newest line on every 300 ms poll, so swiping up to read back was undone by the
+  next tick, and the log sat inside the page's ScrollView so the two stole each
+  other's gestures. v2 makes page and log siblings, gives the log its own
+  always-visible scrollbar, and follows new lines only while the reader is
+  already at the bottom.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="net.ghosthand.btaudio"
+    android:versionCode="2"
+    android:versionName="1.1">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ListenerService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+    </application>
+</manifest>

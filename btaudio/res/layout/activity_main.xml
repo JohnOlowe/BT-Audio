@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Layout is deliberately NOT a ScrollView containing a ScrollView.
+
+  An earlier version put the log inside the page's scroll, and the two fought
+  over every vertical drag: the outer scroll intercepted the gesture, so the
+  log could not be scrolled on its own, and the code that kept the log pinned
+  to its newest line then yanked the whole thing back down under the user's
+  finger. So the page and the log are SIBLINGS here: the page scrolls in the
+  space above, the log owns a fixed band at the bottom with its own scrollbar,
+  and neither can steal a gesture from the other.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- everything except the log scrolls here -->
+    <ScrollView android:id="@+id/page_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12dp"
+        android:clipToPadding="false"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- live state -->
+            <LinearLayout style="@style/Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView android:id="@+id/status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:text="@string/state_idle" />
+
+                <TextView android:id="@+id/detail"
+                    style="@style/Mono"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textColor="@color/text_dim"
+                    android:textIsSelectable="true" />
+
+                <TextView android:id="@+id/error"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textSize="13sp"
+                    android:textColor="@color/warn"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- actions -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/start_stop"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="3"
+                    android:text="@string/start" />
+
+                <Button android:id="@+id/discoverable"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="2"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/discoverable" />
+            </LinearLayout>
+
+            <!-- settings -->
+            <LinearLayout style="@style/Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/Heading"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/hdr_buffer" />
+
+                <Spinner android:id="@+id/buffer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <CheckBox android:id="@+id/insecure"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/hdr_insecure"
+                    android:textColor="@color/text" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginStart="32dp"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_dim"
+                    android:text="@string/insecure_help" />
+            </LinearLayout>
+
+            <!-- first-run instructions -->
+            <LinearLayout style="@style/Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/Heading"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/howto_title" />
+
+                <TextView android:id="@+id/howto"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="13sp"
+                    android:textColor="@color/text"
+                    android:lineSpacingMultiplier="1.15"
+                    android:textIsSelectable="true" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- the log: fixed band at the bottom, scrolls only itself -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/card"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView style="@style/Heading"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginBottom="0dp"
+                android:text="@string/hdr_log" />
+
+            <Button android:id="@+id/copy_log"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="0dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textSize="12sp"
+                android:text="@string/copy_log" />
+        </LinearLayout>
+
+        <!-- fadeScrollbars=false keeps the thumb on screen permanently so it
+             can be grabbed; a thumb that vanishes after a second is useless
+             for a log you are trying to read back through. -->
+        <ScrollView android:id="@+id/log_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:layout_marginTop="6dp"
+            android:background="@color/bg"
+            android:padding="8dp"
+            android:scrollbars="vertical"
+            android:fadeScrollbars="false"
+            android:scrollbarStyle="insideInset"
+            android:scrollbarSize="6dp"
+            android:scrollbarThumbVertical="@color/scroll_thumb"
+            android:scrollbarTrackVertical="@color/scroll_track">
+
+            <TextView android:id="@+id/log"
+                style="@style/Mono"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textIsSelectable="true"
+                android:text="@string/log_empty" />
+        </ScrollView>
+    </LinearLayout>
+</LinearLayout>

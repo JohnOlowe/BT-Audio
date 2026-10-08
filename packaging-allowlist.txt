@@ -1,0 +1,47 @@
+# packaging-allowlist.txt -- classes the APK references and does not contain.
+#
+# Read by verify_apk.py. A dex that names a type from androidx.*, com.google.*,
+# kotlin.*, kotlinx.*, org.jetbrains.* or our own damjay.control.ghosthand.* has to
+# define it, because those packages are neither provided by the platform (android.*,
+# java.*) nor optional by design. When one is genuinely optional, it goes here.
+#
+# Why this file exists: the first published APK called kotlin.jvm.internal.Intrinsics
+# from AppCompatActivity's constructor and did not contain that class. R8 reports
+# missing classes, but a `-dontwarn kotlin.**` in app/proguard.pro swallowed it, the
+# build stayed green, and every launch died with ClassNotFoundException on a real
+# phone. These entries are the same information, but visible, scoped and checked:
+# an entry that stops suppressing anything fails the build, so it cannot rot the way
+# that -dontwarn line did.
+#
+# Grammar:
+#     <type descriptor or prefix>   [both|release|debug]   <reason>
+#     androidx/window/extensions/** both     <- prefix: everything under it
+#     androidx/core/os/BundleKt     debug    <- exact class
+# The scope column is optional and defaults to `both`. A `debug`-scoped entry is only
+# expected in the unshrunk build: R8 prunes the reference out of the release build, so
+# requiring it there would be wrong, and *not* requiring it in debug would hide the
+# fact that the debug dex names a class it does not carry.
+
+# The Kotlin state-holder behind ViewModel saved state. androidx.lifecycle's
+# SavedStateHandle.set(String, Object) writes through a MutableStateFlow (a Kotlin
+# coroutine primitive) and calls kotlinx.coroutines; there is no coroutine runtime in
+# this APK because nothing here uses coroutines. The method cannot run either: it is
+# reached only once a ViewModel with a SavedStateHandle is created, and this app creates
+# no ViewModels at all (ComponentActivity needs only SavedStateHandleSupport, which is
+# not the same class and *is* shipped).
+kotlinx/coroutines/flow/MutableStateFlow   both
+androidx/core/os/BundleKt                  both
+
+# The remainder of the coroutine surface, reachable only from the same SavedStateHandle
+# code before R8 prunes it. Present in the debug dex because nothing was shrunk there.
+kotlinx/coroutines/**                      debug
+
+# androidx.emoji2's generated FlatBuffer metadata reader. The harvested emoji2 AAR does
+# not contain the flatbuffer package at all (a gap in the Gradle-cache dump this
+# toolchain vendors, not something the build does wrong). The only referrer is
+# androidx.emoji2.text.EmojiMetadata, which is constructed by EmojiCompat when it
+# initialises - and nothing initialises it here: emoji2 declares its initialiser in its
+# own manifest, and this toolchain links the app manifest alone (no manifest merging),
+# so no Initializer is ever registered and EmojiCompat.get() stays null. AppCompat's
+# emoji text helper treats a null EmojiCompat as "no emoji support" and carries on.
+androidx/emoji2/text/flatbuffer/**         debug

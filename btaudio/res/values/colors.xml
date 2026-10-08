@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#FF1B4965</color>
+    <color name="primary_dark">#FF123348</color>
+    <color name="accent">#FF5FA8D3</color>
+
+    <color name="bg">#FFF2F4F6</color>
+    <color name="card">#FFFFFFFF</color>
+    <color name="card_border">#FFD8DEE4</color>
+
+    <color name="text">#FF1B2733</color>
+    <color name="text_dim">#FF5A6B7B</color>
+    <color name="ok">#FF1E7B45</color>
+    <color name="warn">#FF9A3412</color>
+
+    <!-- log scrollbar: always visible, so it doubles as a handle you can drag -->
+    <color name="scroll_thumb">#FF8AA4BC</color>
+    <color name="scroll_track">#14000000</color>
+</resources>

@@ -1,0 +1,13 @@
+# toolchain download cache / installed tools (recreated by setup.sh + androidx.sh)
+toolchain/vendor/
+toolchain/env.sh
+
+# build outputs
+*/build/
+build/
+*.apk
+*.dex
+*.idsig
+
+__pycache__/
+app/build/

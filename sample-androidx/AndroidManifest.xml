@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The theme comes from com.google.android.material (material-1.10.0.aar), the
+  activity is androidx.appcompat.app.AppCompatActivity, the layout uses
+  androidx.constraintlayout and androidx.recyclerview. Nothing here needs
+  Maven: toolchain/androidx.sh put all of it in toolchain/vendor/androidx.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.axsample"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+
+    <application
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

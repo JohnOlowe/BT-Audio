@@ -1,0 +1,3 @@
+-keep class com.example.ghosthand.MainActivity { *; }
+-keep class com.example.ghosthand.MainActivity$* { *; }
+-dontwarn android.**

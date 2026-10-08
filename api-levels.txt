@@ -1,0 +1,63 @@
+# api-levels.txt -- framework symbols this app uses that do not exist at minSdk.
+#
+# check_api.py refuses to let anything onto this list silently: every line is a promise
+# that the reference cannot execute on an older platform, and the reason is the review.
+# A line that stops being referenced is reported as stale, so the list cannot quietly
+# grow into a pile of things nobody dares delete.
+#
+# Format:  <symbol>  <min-api>  <why>
+#   Class                  a type reference
+#   Class#method           a method, any descriptor
+#   Class#*                any member of a type
+#
+# The bar for an entry: either the code sits behind an `if (Build.VERSION.SDK_INT >= N)`
+# check inside a class whose whole job is holding that check, or the containing class is
+# only ever *loaded* on a platform that has the symbol. "It works on my phone" is not a
+# reason, and neither is "the device is unlikely to reach there".
+
+# --- gesture injection -------------------------------------------------------
+# Everything here arrived in Android 7.0 with dispatchGesture(). The app has no other
+# way to synthesise input, so on 5.0-6.x it mirrors and cannot be touched - the host
+# dashboard says so instead of offering a switch that cannot work.
+# Load order is the guard: inject() returns before touching any of this below API 24,
+# and every mention lives in the nested Api24 class, which the platform only loads when
+# it is reached.
+android/accessibilityservice/GestureDescription                        24  InjectionAccessibilityService$Api24: loaded only when inject() passes the API-24 gate
+android/accessibilityservice/GestureDescription$Builder                24  same class
+android/accessibilityservice/GestureDescription$StrokeDescription      24  same class
+android/accessibilityservice/AccessibilityService$GestureResultCallback 24 same class
+android/accessibilityservice/AccessibilityService#dispatchGesture      24  same class (reached through our AccessibilityService subclass)
+
+# --- MediaCodec buffer access ------------------------------------------------
+# The per-index accessors replaced getInputBuffers()/getOutputBuffers() in Android 5.0.
+# Both call sites are inside util/CodecCompat, which branches on SDK_INT and is called
+# on every platform: this is the AndroidX Api21Impl pattern, and the class exists so
+# that the app's own decoders never contain an unguarded call.
+android/media/MediaCodec#getInputBuffer                                21  util/CodecCompat picks the API-19 array form below 21
+android/media/MediaCodec#getOutputBuffer                               21  same class
+
+# --- screen capture (host role) ---------------------------------------------
+# The host half of the app. MediaProjection is Android 5.0, and MainActivity will not
+# open HostActivity below 21 while HostActivity itself finishes in onCreate; the service
+# restarts into the same gate in onStartCommand. A 4.4 phone is therefore never in this
+# code, by policy and in three places.
+android/media/projection/MediaProjection                               21  host role only: ApiLevels.canHost gates MainActivity, HostActivity and onStartCommand
+android/media/projection/MediaProjection$Callback                      21  same
+android/media/projection/MediaProjectionManager                        21  same
+android/hardware/display/VirtualDisplay$Callback                       21  same (VirtualDisplay itself is API 19; its Callback is not)
+android/hardware/display/VirtualDisplay#resize                          21  ScreenCaptureService.reconfigureCapture: rotation/size change resizes the live display instead of recreating it (Android 14 allows one createVirtualDisplay per consent); host role only, same gates as MediaProjection
+android/hardware/display/VirtualDisplay#setSurface                      21  ScreenCaptureService.reconfigureCapture points the surviving display at the new encoder surface; host role only, same gates as MediaProjection
+android/media/MediaCodecInfo$EncoderCapabilities                       21  host encoder bitrate mode, host role only
+
+# --- foreground service typing -----------------------------------------------
+# The three-argument startForeground(id, notification, type) is API 29; the service
+# calls it inside `if (SDK_INT >= Q)` and falls back to the two-argument form below.
+android/app/Service#startForeground                                    29  ScreenCaptureService.onStartCommand: SDK_INT >= Q picks the 3-arg form
+
+# --- notification channels ---------------------------------------------------
+# Guarded inside createNotificationChannel() with `SDK_INT < O return`. Channels do not
+# exist below Android 8.0 and NotificationCompat handles that case, so the only thing
+# that matters is that these two references never execute there. (They did, until this
+# file was written: a host on 5.0-7.1 crashed in onCreate.)
+android/app/NotificationChannel                                       26  ScreenCaptureService.createNotificationChannel: SDK_INT < O returns first
+android/app/NotificationManager#createNotificationChannel              26  same

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BT Audio In</string>
+
+    <string name="state_idle">Not listening</string>
+    <string name="state_listening">Listening - waiting for the PC</string>
+    <string name="state_connected">Connected</string>
+
+    <string name="start">Start listening</string>
+    <string name="stop">Stop</string>
+    <string name="discoverable">Make discoverable (5 min)</string>
+    <string name="copy_log">Copy log</string>
+
+    <string name="hdr_buffer">Buffer (latency vs. dropouts)</string>
+    <string name="hdr_insecure">Insecure RFCOMM (compatibility)</string>
+    <string name="insecure_help">Try this if the PC connects but nothing ever plays, or if Windows cannot create the COM port. Secure is the default and stays the right choice when it works.</string>
+
+    <string name="hdr_log">Log</string>
+    <string name="log_empty">Nothing yet. Press Start listening.</string>
+
+    <string name="err_no_bt_permission">Bluetooth permission denied. Without it this app cannot open a socket at all.</string>
+
+    <string name="howto_title">Setting this up the first time</string>
+    <string name="howto"><![CDATA[
+<b>1. Pair.</b> Press <i>Make discoverable</i>, then pair from the PC.<br/><br/>
+<b>2. Start.</b> Press <i>Start listening</i>. The service must be running
+before the next step - Windows finds the port by querying the phone, so a port
+that is not open cannot be listed.<br/><br/>
+<b>3. Map a COM port.</b> On Windows: Bluetooth settings &rarr; <i>More Bluetooth
+options</i> &rarr; <i>COM Ports</i> tab &rarr; <i>Add</i> &rarr;
+<i>Outgoing</i> &rarr; pick the phone &rarr; pick the service
+<b>PC Audio In</b>. Note the COM number.<br/><br/>
+<b>4. Send.</b> Run the PowerShell sender with that COM port.<br/><br/>
+No Wi-Fi, no router, no internet, no cable, and no mobile data is touched: this
+is a point-to-point socket, not a network.
+]]></string>
+</resources>
