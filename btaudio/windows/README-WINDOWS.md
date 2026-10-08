@@ -1,3 +1,104 @@
+# The GUI app - BTAudioSender.exe (use this one)
+
+`BTAudioSender.exe` is the same engine as the PowerShell script, but it fixes the
+thing that made every buffer preset skip, and it has the knobs the script lacks.
+It is a plain .NET Framework 4.8 WinForms program: no installer, no runtime
+download (Windows 10 already has 4.8), no DLLs beside it. Double-click it.
+
+## Why the script skipped even at "Very tolerant"
+
+The phone allocates a buffer of `chunkMs x preset` - 320 ms at Very tolerant with
+20 ms chunks - but the app calls `play()` on an **empty** buffer, and the script
+once it had sent every chunk the PC produced. Nothing ever filled that buffer, so
+the phone had nothing to ride out a hiccup with, and a hiccup becomes a skip
+regardless of which preset is chosen. That is why the setting seemed to do
+nothing.
+
+The new app fills it, in three ways the script does not:
+
+1. **Prebuffer.** It holds back the first `PrebufferMs` of audio and then sends it
+   as one burst. The phone now permanently holds about that much audio, and that
+   depth is what absorbs link jitter and CPU hiccups.
+2. **Silence fill on the device's clock.** WASAPI hands over *nothing* while the
+   PC is quiet - there is no silence packet - so a naive sender goes quiet too and
+   the phone drains. The app reads the endpoint's own stream position and makes up
+   any gap with silence, so the phone's buffer keeps draining against a moving
+   timeline and the next sound does not skip. (It asks the *device*, not the wall
+   clock: using the wall clock treats any hiccup in the sender as a gap and
+   splices silence into the middle of real audio. The test suite catches exactly
+   that mistake.)
+3. **Prebuffer above the phone's capacity is clamped.** Past `chunkMs x preset`
+   the phone's own `write()` blocks, which stalls the link instead of absorbing
+   anything, so the app refuses to ask for more.
+
+Start with **Balanced (recommended)**: 44.1 kHz stereo ADPCM, 20 ms chunks,
+260 ms prebuffer. If it still skips, use **Robust** (22.05 kHz mono, 88 kbit/s) -
+that is roughly a quarter of the traffic. If it *still* skips, turn on
+**Auto quality** and let it walk down on its own.
+
+## The window, top to bottom
+
+| Control | What it is for |
+|---|---|
+| **Phone port** | The outgoing Bluetooth COM port for the phone ("Standard Serial over Bluetooth link"). Refresh after pairing. |
+| **Laptop output** | Which render device to tap. Leave on "(system default)", or pick a virtual cable - see below. |
+| **WAV file** | Optional. With a path here the app plays that file to the phone instead of tapping the laptop. |
+| **Preset** | Balanced / Robust / Maximum stability / Low latency / Studio PCM. Fills in the controls below. |
+| **Prebuffer ms** | The single most important knob. Audio held in the phone. Higher = fewer skips, more delay. Must stay under the phone's capacity, which the app shows you. |
+| **Auto quality** | Watches how long each write takes. A blocking write means the phone stopped draining, so it steps the bitrate down and reconnects - 44.1k stereo to 44.1k mono to 32k to 22.05k to 16k mono. |
+| **Silence the laptop** | See below. |
+| **Latency panel** | The number to type into your video player. See below. |
+| **Live** | Wire bitrate, chunks, how much the sender is holding, and how long each write takes. "Link is struggling" means auto quality is about to act. |
+
+## Silencing the laptop while it plays
+
+A loopback tap is passive: the audio still comes out of the laptop's speakers.
+
+* **Setting the volume to zero** (the first option) usually keeps the capture
+  alive, because the digital tap sits *ahead* of the volume control on most
+  drivers.
+* **Muting the device** (the second option) also silences the capture on some
+  drivers - notably Realtek with Microsoft's generic driver - which would send
+  silence to the phone.
+
+You do not have to guess: the app watches the capture level. If audio was clearly
+flowing and then goes silent after the mute, it undoes the mute, says so, and
+tells you to use a cable instead. It also reports whether the driver does volume
+in hardware, which is the case where the tap tends to die.
+
+**The bulletproof answer is a virtual cable** (VB-CABLE, free). Install it, set it
+as the default playback device, and pick "CABLE Input" in **Laptop output**. Then
+Windows sends everything to the cable, the phone gets it, and the real speakers
+never see it at all. The same trick keeps a meeting's audio off your speakers
+while your phone carries it.
+
+## Latency: the number to put in your player
+
+`Total = PrebufferMs + ChunkMs/2 + 25 ms (laptop to phone) + headphones`
+
+The 25 ms covers the WASAPI packet, RFCOMM and the phone's decode. The headphone
+term is whatever sits between the phone and your ears: 0 ms wired, roughly 90 ms
+for aptX, 160 ms for AAC, 200 ms for SBC, 250 ms for LDAC. The app computes the
+sum and has a **Copy this number** button.
+
+For the default preset with wired headphones that is about **295 ms**; with SBC
+Bluetooth headphones about **495 ms**. Put that figure into the player's audio
+delay (or LagSync). It is a constant, not something that drifts: the prebuffer
+fix is what makes it constant, because the phone's queue no longer drains and
+refills behind your back.
+
+If you would rather trade delay for stability, raise `PrebufferMs` - each extra
+100 ms is 100 ms more delay and 100 ms more resilience. The phone's capacity at
+the chosen preset is the hard ceiling and the app will not let you pass it.
+
+## Verified how
+
+`../windows/pscheck.sh` and `pscheck/guicheck.sh` compile this app, then run the
+*same engine* on Linux over a virtual serial port and decode the bytes with the
+very same `Proto`/`Adpcm` classes that ship inside the APK. PCM has to come back
+bit-exact, ADPCM within 1%, the ladder has to walk down under induced congestion -
+and every one of those tests has caught a real bug, which is why they exist.
+
 # BT Audio In — Windows side
 
 Laptop audio on your Android phone over **Bluetooth only**. No Wi-Fi, no router,
