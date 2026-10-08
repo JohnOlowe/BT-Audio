@@ -93,7 +93,7 @@ the chosen preset is the hard ceiling and the app will not let you pass it.
 
 ## Verified how
 
-`../windows/pscheck.sh` and `pscheck/guicheck.sh` compile this app, then run the
+`btaudio/windows/pscheck.sh` and `pscheck/guicheck.sh` compile this app, then run the
 *same engine* on Linux over a virtual serial port and decode the bytes with the
 very same `Proto`/`Adpcm` classes that ship inside the APK. PCM has to come back
 bit-exact, ADPCM within 1%, the ladder has to walk down under induced congestion -
@@ -117,13 +117,13 @@ Nothing in this document shares, bridges, or tunnels an internet connection.
 | Windows | 10 (1703+) or 11, with working Bluetooth |
 | PowerShell | 5.1, which ships with Windows — no install |
 | Phone | Android 7.0+ (the APK declares minSdk 24), Bluetooth on |
-| APK | `btaudio.apk` (release) or `btaudio-debug.apk` (unshrunk fallback) |
+| APK | `btaudio/build/btaudio.apk` (release) or `btaudio/build/btaudio-debug.apk` (debug) |
 
 The APK is signed with the project's stable key, so a new build installs *over*
 an old one instead of failing with a signature mismatch.
 
-Install it however you like: `adb install btaudio.apk`, or copy the file to the
-phone and open it.
+Install the release build with `adb install -r btaudio/build/btaudio.apk`, or copy that
+APK to the phone and open it.
 
 ## One-time setup
 
@@ -233,14 +233,15 @@ than leaving you with silence.
 
 ## How this is verified without a Windows machine
 
-Three harnesses live next to the script and run on Linux. They exist because the
-layers fail differently, and only the last one can catch what a user hears.
+The harnesses live in `btaudio/windows/` (with GUI integration helpers in
+`pscheck/`) and run on Linux. They exist because the layers fail differently,
+and only the last one can catch what a user hears.
 
 | File | What it proves |
 |---|---|
-| `cscheck.sh [script]` | Lifts the C# out of the `Add-Type` here-string and compiles it with Roslyn against the **real .NET Framework 4.8 reference assemblies** at `/langversion:5` - the exact compiler Windows PowerShell 5.1 uses. Catches `CS0031`, `CS0199`, and any C# 6+ syntax that 5.1 would reject. |
-| `mkstub.py TARGET OUT` | Writes a copy of the sender with the WASAPI class replaced by one that reads a WAV and hands it out 10 ms at a time, so the **streaming** branch can be exercised off Windows. |
-| `pscheck.sh [script] [test]` | Runs everything: `cscheck.sh`, a real PowerShell parse, then 15 test groups that execute the script for real over a `socat` pty pair standing in for the Bluetooth COM port. The bytes are decoded by the *same* `Proto`/`Adpcm` classes that ship in the APK, then compared against the WAV that was fed in. |
+| `btaudio/windows/cscheck.sh [script]` | Lifts the C# out of the `Add-Type` here-string and compiles it with Roslyn against the **real .NET Framework 4.8 reference assemblies** at `/langversion:5` - the exact compiler Windows PowerShell 5.1 uses. Catches `CS0031`, `CS0199`, and any C# 6+ syntax that 5.1 would reject. |
+| `btaudio/windows/mkstub.py TARGET OUT` | Writes a copy of the sender with the WASAPI class replaced by one that reads a WAV and hands it out 10 ms at a time, so the **streaming** branch can be exercised off Windows. |
+| `btaudio/windows/pscheck.sh [script] [test]` | Runs everything: `cscheck.sh`, a real PowerShell parse, then 15 test groups that execute the script for real over a `socat` pty pair standing in for the Bluetooth COM port. The bytes are decoded by the *same* `Proto`/`Adpcm` classes that ship in the APK, then compared against the WAV that was fed in. |
 
 What `pscheck.sh` covers:
 
@@ -259,8 +260,8 @@ with the first 50 ms exempt because IMA ADPCM always climbs from predictor 0 -
 that warm-up peaks at frame 6 on both channels of the test signal and is inherent
 to the codec, not a defect.
 
-Setup is self-healing - `cscheck.sh` re-fetches the SDK and reference assemblies
-(URLs in its header) and `pscheck.sh` installs PowerShell 7.4.6 as a pinned
+Setup is self-healing - `btaudio/windows/cscheck.sh` caches the SDK and reference assemblies
+outside the checkout, and `btaudio/windows/pscheck.sh` installs PowerShell 7.4.6 as a pinned
 global tool (unpinned installs of that tool are currently broken upstream).
 `socat`, `python3` and a JDK must already be present.
 

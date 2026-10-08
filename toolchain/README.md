@@ -5,16 +5,19 @@ from PyPI, npm and GitHub. See [`../RECIPE.md`](../RECIPE.md) for the full write
 and the reasoning behind each choice (section 9 covers AndroidX).
 
 ```bash
-bash toolchain/setup.sh                     # fetch + verify everything (~10 s, ~170 MB)
-                                            #   --api 35          another platform level
-                                            #   --vendor /tmp/tc  keep it out of the repo
-                                            #   KEEP_TMP=1        keep the download cache
+bash toolchain/setup.sh                     # fetch + verify the Android tools
+                                            #   --api 35          another compile platform
+                                            #   --ref-api 24      platform used by the API audit
+                                            #   --vendor /tmp/tc  keep tools out of the repo
 
-bash toolchain/check.sh  sample              # fast test-compile (XML + Java + D8)
-bash toolchain/test.sh   sample              # compile AND run JUnit 4 unit tests
-bash toolchain/build.sh  sample --verify     # signed, aligned, verified APK
+bash toolchain/check.sh  btaudio             # fast XML + Java + D8 compile check
+bash toolchain/test.sh   btaudio             # run the BT Audio JVM unit tests
+bash toolchain/build.sh  btaudio --release --verify
 
-# AndroidX: once, from a committed Gradle cache on GitHub (no Maven, ~35 s)
+# One command for every Android project, including the AndroidX fixture:
+bash build-all.sh
+
+# AndroidX is fetched/assembled by build-all.sh (or explicitly, once):
 bash toolchain/androidx.sh
 bash toolchain/check.sh  sample-androidx
 bash toolchain/build.sh  sample-androidx --release --verify
@@ -67,43 +70,27 @@ debugger, no `run-as`, and nothing in logcat indicating it is debuggable.
 
 ## Checking what the artifact promises
 
+```bash
+python3 verify_apk.py btaudio/build/btaudio.apk --project btaudio --min-api 24
+python3 check_api.py btaudio/build/stage/classes --min-api 24 \
+  --android-jar toolchain/vendor/android-24.jar --apk btaudio/build/btaudio.apk
 ```
-bash build.sh                       # runs both, after building
-python3 verify_apk.py  app/build/app.apk     # R8 kept what the framework looks up
-python3 check_api.py   app/build/stage/classes --min-api 19 \
-                       --android-jar toolchain/vendor/android-19.jar --apk app/build/app.apk
-```
 
-`verify_apk.py` (repo root) is about shrinking and packaging: required classes and call
-strings in the dex, required resources in the compiled XML, and the dex count against the
-manifest's own `minSdkVersion` - because Dalvik loads one dex file and a `minSdk < 21` APK
-with a second one is broken on exactly the phones it claims to support. It also understands
-that aapt2 version-qualifies a resource when a newer attribute is involved - and fails the
-build when that versioning gutted a vector's base copy (see the caveats below).
+`verify_apk.py` checks the built artifact: source/APK package and minSdk agreement,
+manifest components (so R8 cannot silently delete an activity or service), dex count
+against the declared floor, vector base resources, and self-containment of the project
+and AndroidX/Kotlin dependency types referenced by dex. `toolchain/manifest_keep.py`
+generates manifest-derived keep rules during release builds.
 
-`packaging-allowlist.txt` (repo root) is about the *finished APK*: every type the dex
-names under `androidx.*`, `com.google.*`, `kotlin.*`, `kotlinx.*` or the app's own package
-must be defined in that APK or declared there with a reason. This is the check that
-catches a library compiled against something the build never linked - the failure mode
-that shipped once already, as a `ClassNotFoundException` on launch (`-dontwarn kotlin.**`
-had been hiding R8's report that the Kotlin runtime was missing). Entries are scoped
-`both`/`release`/`debug` so an entry needed only by the unshrunk build is not reported
-stale when the release one is verified.
+Optional packaging exceptions live beside the project in
+`PROJECT/packaging-allowlist.txt`; this keeps an AndroidX fixture's optional runtime types
+from affecting unrelated APKs. Entries may be scoped `both`, `release`, or `debug`, and
+an unused entry fails verification for that build configuration.
 
-`toolchain/aar_floor.py` is about the floor the *libraries* ask for: it reads each vendored
-AAR's own `minSdkVersion` and fails the build if one needs a newer platform than the app
-claims. Gradle would have caught this while merging manifests; here the link step sees only
-the app manifest, so it is checked explicitly.
-
-`check_api.py` (repo root) is about API levels: it parses each class file's constant pool
-and checks every `android.*` and `java.*` reference against a real `android.jar` of the
-minimum level, resolving inherited methods the way the JVM does. Anything that genuinely
-needs a newer platform must be declared in `api-levels.txt` with its level and a reason;
-an exemption that stops being used is reported as stale. It also reads the dex to confirm
-the lambdas were desugared (`invoke-custom` must not survive below API 26).
-
-Both are run by the root `build.sh`, after the APK is signed and before anything can be
-published.
+`check_api.py` checks framework references against an `android.jar` for the app's minimum
+API, including inherited methods. Any guarded newer-API symbols must be declared in the
+root `api-levels.txt` with their introduction level and a reason; unused entries fail as
+stale.
 
 ## Keeping the manifest's classes alive
 
@@ -120,25 +107,11 @@ absence from that list shipped a release APK that could not start. `verify_apk.p
 re-parses the manifest with the same function and fails any APK missing a declared
 component, so even bypassing the generator is caught.
 
-## Artwork: generated resources, not hand-edited files
+## Design assets are separate from the BT Audio project
 
-Two drawings in `design/` are the source of truth for everything visual: the launcher mark
-and the splash hand. `design/make_assets.py` turns them into every density of launcher icon,
-the adaptive icon XML, the notification silhouette and the splash bitmap, and `--check` fails
-if the committed resources are stale. The reason to generate rather than edit: the same mark
-has to exist at five densities in three forms (legacy square, legacy round, adaptive
-foreground) plus a silhouette, and a hand-edited set is guaranteed to drift.
-
-Two things in it are worth remembering. The generated art arrives as a rounded tile on a
-white field, so a naive bounding box finds the white corners - `flatten_tile()` flood-fills
-the field away first (and swallows the tile's antialiased edge, which is invisible on a teal
-icon but becomes an outline once alpha is used as a shape). And the notification icon is
-derived from the launcher mark's alpha channel, because Android tints a notification icon and
-throws its colours away.
-
-`design/splash_preview.py` renders the splash animation off-device, reading its constants out
-of `SplashChoreography.java` so the preview cannot drift from the real thing. It is a
-replica, not proof - but it is how a hand that tapped upwards through the glass was caught.
+The `design/` directory is retained as upstream toolchain/design material and is not
+consumed by `btaudio/`. The BT Audio launcher resources are checked into
+`btaudio/res/mipmap-*`; do not run `design/make_assets.py` as part of an Android build.
 
 ## The Kotlin runtime, and why a Java-only app has one
 
@@ -204,8 +177,7 @@ and dependency versions are whatever the harvested cache contains.
   publishing. A project that commits its own key wins instead: `resolve_signing()`
   reads `GHOSTHAND_STORE_FILE` / `_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` from the
   project's or the repo root's `gradle.properties`, and falls back to
-  `keystore/damjay_debug.keystore` if it finds one. That is what keeps every GhostHand
-  build signed with one stable key, so a new APK installs over the previous one.
+  `keystore/damjay_debug.keystore` if it finds one. That is what keeps project builds signed with one stable key, so a new APK installs over the previous one.
   PKCS12 has no separate key password (keytool says so and ignores the difference), so a
   key password shorter than the store password is treated as a typo and replaced by the
   store password.

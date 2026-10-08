@@ -23,12 +23,20 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GUI="${1:-/home/user/ghosthand/btaudio/windows/gui}"
+ROOT="$(cd "$HERE/.." && pwd)"
+GUI="${1:-$ROOT/btaudio/windows/gui}"
 FILTER="${2:-}"          # optional: run only the test with this name
-CS=/home/user/cscheck
-SRC=/home/user/ghosthand/btaudio/src/net/ghosthand/btaudio
-FIX="$HERE/fixtures"
-CLASSES="$HERE/classes"
+CSCHECK="$ROOT/btaudio/windows/cscheck.sh"
+CS="${BTAUDIO_WINDOWS_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/btaudio/windows}"
+SRC="$ROOT/btaudio/src/net/ghosthand/btaudio"
+FIX="$HERE/build/fixtures"
+CLASSES="$HERE/build/classes"
+GUI_OUT="$HERE/build/gui-out"
+TOOLCHAIN="$ROOT/toolchain/vendor"
+JAVA="$TOOLCHAIN/jre/bin/java"
+ECJ="$TOOLCHAIN/ecj.jar"
+[ -x "$JAVA" ] || JAVA="$(command -v java || true)"
+export BTAUDIO_WINDOWS_CACHE="$CS"
 export DOTNET_ROOT="$CS"
 export PATH="$CS:$PATH"
 CSC="$CS/sdk/8.0.425/Roslyn/bincore/csc.dll"
@@ -37,20 +45,27 @@ fails=0
 step() { printf '\n=== %s ===\n' "$*"; }
 bad()  { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
 
-[ -f "$CS/cscheck.sh" ] || { echo "cscheck.sh missing"; exit 2; }
-[ -x "$CS/dotnet" ] && [ -d "$CS/host/fxr" ] || bash "$CS/cscheck.sh" bootstrap
-mkdir -p "$FIX" "$CLASSES" "$GUI/out"
+[ -f "$CSCHECK" ] || { echo "cscheck.sh missing: $CSCHECK"; exit 2; }
+[ -n "$JAVA" ] || { echo "a Java runtime is required" >&2; exit 2; }
+if ! command -v javac >/dev/null 2>&1; then
+    [ -x "$JAVA" ] && [ -s "$ECJ" ] || {
+        echo "need javac or the repository toolchain's JRE + ECJ (run toolchain/setup.sh)" >&2
+        exit 2
+    }
+fi
+[ -x "$CS/dotnet" ] && [ -d "$CS/host/fxr" ] || bash "$CSCHECK" bootstrap
+mkdir -p "$FIX" "$CLASSES" "$GUI_OUT"
 
 # ------------------------------------------------------- layer 1: build for Windows
 step "layer 1: compile the Windows .exe (net48, C# 7.3, WinForms)"
 REFS="$CS/refs/build/.NETFramework/v4.8"
 out=$("$CS/dotnet" exec "$CSC" /nologo /noconfig /nostdlib /target:winexe /langversion:7.3 \
-      /out:"$GUI/out/BTAudioSender.exe" \
+      /out:"$GUI_OUT/BTAudioSender.exe" \
       /r:"$REFS/mscorlib.dll" /r:"$REFS/System.dll" /r:"$REFS/System.Core.dll" \
       /r:"$REFS/System.Drawing.dll" /r:"$REFS/System.Windows.Forms.dll" \
       "$GUI/Core.cs" "$GUI/Engine.cs" "$GUI/Windows.cs" "$GUI/MainForm.cs" "$GUI/Program.cs" 2>&1)
 if [ -n "$out" ]; then echo "$out" | head -20; bad "the Windows exe does not compile"; fi
-[ -f "$GUI/out/BTAudioSender.exe" ] && echo "BTAudioSender.exe built ($(stat -c%s "$GUI/out/BTAudioSender.exe") bytes)"
+[ -f "$GUI_OUT/BTAudioSender.exe" ] && echo "BTAudioSender.exe built ($(stat -c%s "$GUI_OUT/BTAudioSender.exe") bytes)"
 
 # ------------------------------------------------------------ layer 2: Linux build
 step "layer 2: compile the same engine for Linux so it can be run"
@@ -58,9 +73,9 @@ REFDIR=$(ls -d "$CS"/packs/Microsoft.NETCore.App.Ref/*/ref/net8.0 | head -1)
 REFLIST=""
 for f in "$REFDIR"/*.dll; do REFLIST="$REFLIST /r:$f"; done
 out=$("$CS/dotnet" exec "$CSC" /nologo /noconfig /nostdlib /target:exe /langversion:7.3 \
-      /out:"$GUI/out/harness.dll" $REFLIST "$GUI/Core.cs" "$GUI/Engine.cs" "$GUI/TestMain.cs" 2>&1)
+      /out:"$GUI_OUT/harness.dll" $REFLIST "$GUI/Core.cs" "$GUI/Engine.cs" "$GUI/TestMain.cs" 2>&1)
 if [ -n "$out" ]; then echo "$out" | head -20; bad "the engine does not compile for Linux"; fi
-cat > "$GUI/out/harness.runtimeconfig.json" <<'EOF'
+cat > "$GUI_OUT/harness.runtimeconfig.json" <<'EOF'
 { "runtimeOptions": { "tfm": "net8.0",
   "framework": { "name": "Microsoft.NETCore.App", "version": "8.0.0" } } }
 EOF
@@ -81,8 +96,14 @@ tone(out + '/stereo44k.wav', 2)
 tone(out + '/mono44k.wav', 1)
 print('fixtures written')
 PY
-javac -nowarn -d "$CLASSES" "$HERE/TimedIn.java" "$HERE/WireSink.java" "$HERE/LadderCheck.java" \
-      "$SRC/Proto.java" "$SRC/Adpcm.java" || bad "could not compile the phone-side decoder"
+if command -v javac >/dev/null 2>&1; then
+    javac -nowarn -d "$CLASSES" "$HERE/TimedIn.java" "$HERE/WireSink.java" "$HERE/LadderCheck.java" \
+          "$SRC/Proto.java" "$SRC/Adpcm.java" || bad "could not compile the phone-side decoder"
+else
+    "$JAVA" -jar "$ECJ" -source 8 -target 8 -proc:none -nowarn -d "$CLASSES" \
+        "$HERE/TimedIn.java" "$HERE/WireSink.java" "$HERE/LadderCheck.java" \
+        "$SRC/Proto.java" "$SRC/Adpcm.java" || bad "ECJ could not compile the phone-side decoder"
+fi
 
 # --------------------------------------------------------------- engine harness
 # run NAME WAV MODE EXACT CODEC CHANNELS RATE CHUNKMS PREBUFFER SECONDS
@@ -96,14 +117,14 @@ run() {
     sleep 0.6
     local rc=0
     if [ "$mode" = "ladder" ]; then
-        timeout 90 java -cp "$CLASSES" LadderCheck "$b" "$secs" >"$FIX/$name.sink" 2>&1 &
+        timeout 90 "$JAVA" -cp "$CLASSES" LadderCheck "$b" "$secs" >"$FIX/$name.sink" 2>&1 &
     else
-        timeout 90 java -cp "$CLASSES" WireSink "$b" "$codec" "$chans" "$rate" "$chunk" \
+        timeout 90 "$JAVA" -cp "$CLASSES" WireSink "$b" "$codec" "$chans" "$rate" "$chunk" \
             "$wav" "$mode" 0 >"$FIX/$name.sink" 2>&1 &
     fi
     local jp=$!
     sleep 1.5
-    timeout 90 "$CS/dotnet" exec "$GUI/out/harness.dll" "$a" "$wav" "$codec" "$chans" \
+    timeout 90 "$CS/dotnet" exec "$GUI_OUT/harness.dll" "$a" "$wav" "$codec" "$chans" \
         "$rate" "$chunk" "$pre" "$secs" "${11:-0}" >"$FIX/$name.ps" 2>&1
     rc=$?
     wait $jp; local jrc=$?

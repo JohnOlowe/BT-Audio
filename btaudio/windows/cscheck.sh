@@ -23,34 +23,35 @@
 # readonly) and CS8026 (C#6+ syntax) identically to Windows PowerShell 5.1.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PS1="${1:-$HERE/../bt-audio-send.ps1}"
+PS1="${1:-$HERE/bt-audio-send.ps1}"
+CACHE="${BTAUDIO_WINDOWS_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/btaudio/windows}"
 SDK_URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.425/dotnet-sdk-8.0.425-linux-x64.tar.gz"
 REFS_URL="https://api.nuget.org/v3-flatcontainer/microsoft.netframework.referenceassemblies.net48/1.0.3/microsoft.netframework.referenceassemblies.net48.1.0.3.nupkg"
+mkdir -p "$CACHE"
 
-# Self-healing bootstrap: the SDK and the reference assemblies are ~250 MB of
-# cache, not source, so they are re-fetched whenever absent (sandboxes purge
-# big caches between sessions; a fresh machine has never seen them).
-if [ ! -x "$HERE/dotnet" ] || [ ! -d "$HERE/host/fxr" ]; then
-    echo "==> fetching .NET SDK (compiler host)"
-    curl -sS -m 900 -o "$HERE/sdk.tar.gz" "$SDK_URL"
-    tar xzf "$HERE/sdk.tar.gz" -C "$HERE"
-    rm -f "$HERE/sdk.tar.gz"
-    chmod +x "$HERE/dotnet"
+# The pinned compiler and reference assemblies are cached outside the checkout;
+# they are build tools, not source files. Set BTAUDIO_WINDOWS_CACHE to relocate.
+if [ ! -x "$CACHE/dotnet" ] || [ ! -d "$CACHE/host/fxr" ]; then
+    echo "==> fetching .NET SDK (compiler host) into $CACHE"
+    curl -fsSL -m 900 -o "$CACHE/sdk.tar.gz" "$SDK_URL"
+    tar xzf "$CACHE/sdk.tar.gz" -C "$CACHE"
+    rm -f "$CACHE/sdk.tar.gz"
+    chmod +x "$CACHE/dotnet"
 fi
-if [ ! -f "$HERE/refs/build/.NETFramework/v4.8/mscorlib.dll" ]; then
-    echo "==> fetching .NET Framework 4.8 reference assemblies"
-    curl -sS -m 300 -o "$HERE/refs.nupkg" "$REFS_URL"
-    unzip -q -o "$HERE/refs.nupkg" -d "$HERE/refs"
+if [ ! -f "$CACHE/refs/build/.NETFramework/v4.8/mscorlib.dll" ]; then
+    echo "==> fetching .NET Framework 4.8 reference assemblies into $CACHE"
+    curl -fsSL -m 300 -o "$CACHE/refs.nupkg" "$REFS_URL"
+    unzip -q -o "$CACHE/refs.nupkg" -d "$CACHE/refs"
 fi
 
-export DOTNET_ROOT="$HERE"
-export PATH="$HERE:$PATH"
+export DOTNET_ROOT="$CACHE"
+export PATH="$CACHE:$PATH"
 [ "${1:-}" = "bootstrap" ] && { echo "bootstrap complete"; exit 0; }
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_NOLOGO=1
-CSC="$HERE/sdk/8.0.425/Roslyn/bincore/csc.dll"
-REFS="$HERE/refs/build/.NETFramework/v4.8"
-OUT="$HERE/out"
+CSC="$CACHE/sdk/8.0.425/Roslyn/bincore/csc.dll"
+REFS="$CACHE/refs/build/.NETFramework/v4.8"
+OUT="$CACHE/out"
 mkdir -p "$OUT"
 
 python3 - "$PS1" "$OUT/wasapi.cs" <<'PY'
@@ -61,7 +62,7 @@ open(sys.argv[2], 'w', encoding='utf-8').write(cs)
 print("extracted %d chars of C# from %s" % (len(cs), sys.argv[1]))
 PY
 
-"$HERE/dotnet" exec "$CSC" /nologo /noconfig /nostdlib /target:library \
+"$CACHE/dotnet" exec "$CSC" /nologo /noconfig /nostdlib /target:library \
     /langversion:5 /out:"$OUT/wasapi.dll" \
     /r:"$REFS/mscorlib.dll" /r:"$REFS/System.dll" /r:"$REFS/System.Core.dll" \
     "$OUT/wasapi.cs"

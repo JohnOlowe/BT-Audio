@@ -31,13 +31,20 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET="${1:-/home/user/bt-audio-send.ps1}"
+ROOT="$(cd "$HERE/../.." && pwd)"
+TARGET="${1:-$HERE/bt-audio-send.ps1}"
 FILTER="${2:-}"          # optional: run only the test with this name
-CS=/home/user/cscheck
-SRC=/home/user/ghosthand/btaudio/src/net/ghosthand/btaudio
-FIX="$HERE/fixtures"
-CLASSES="$HERE/classes"
+CSCHECK="$HERE/cscheck.sh"
+CS="${BTAUDIO_WINDOWS_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/btaudio/windows}"
+SRC="$ROOT/btaudio/src/net/ghosthand/btaudio"
+FIX="$HERE/build/pscheck/fixtures"
+CLASSES="$HERE/build/pscheck/classes"
 STUB="$FIX/loopback-stub.ps1"
+TOOLCHAIN="$ROOT/toolchain/vendor"
+JAVA="$TOOLCHAIN/jre/bin/java"
+ECJ="$TOOLCHAIN/ecj.jar"
+[ -x "$JAVA" ] || JAVA="$(command -v java || true)"
+export BTAUDIO_WINDOWS_CACHE="$CS"
 export DOTNET_ROOT="$CS"
 export PATH="$CS:$HOME/.dotnet/tools:$PATH"
 
@@ -50,12 +57,19 @@ want() { [ -n "$FILTER" ] && [ "$1" != "$FILTER" ] && return 1; return 0; }
 
 # ---------------------------------------------------------------- dependencies
 step "dependencies"
-for t in socat python3 javac; do
-    command -v $t >/dev/null || { echo "$t is required"; exit 2; }
+for t in socat python3; do
+    command -v "$t" >/dev/null || { echo "$t is required"; exit 2; }
 done
-[ -f "$CS/cscheck.sh" ] || { echo "cscheck.sh missing from $CS"; exit 2; }
-# the PowerShell tool shim needs the .NET host, so make sure it exists first
-[ -x "$CS/dotnet" ] && [ -d "$CS/host/fxr" ] || bash "$CS/cscheck.sh" bootstrap || true
+[ -f "$CSCHECK" ] || { echo "cscheck.sh missing: $CSCHECK"; exit 2; }
+[ -n "$JAVA" ] || { echo "a Java runtime is required" >&2; exit 2; }
+if ! command -v javac >/dev/null 2>&1; then
+    [ -x "$JAVA" ] && [ -s "$ECJ" ] || {
+        echo "need javac or the repository toolchain's JRE + ECJ (run toolchain/setup.sh)" >&2
+        exit 2
+    }
+fi
+# The PowerShell tool shim needs the cached .NET host. cscheck.sh bootstraps it.
+[ -x "$CS/dotnet" ] && [ -d "$CS/host/fxr" ] || bash "$CSCHECK" bootstrap
 command -v pwsh >/dev/null 2>&1 || {
     echo "installing PowerShell 7.4.6 ..."
     "$CS/dotnet" tool install --global PowerShell --version 7.4.6 >/dev/null 2>&1
@@ -66,7 +80,7 @@ command -v pwsh >/dev/null 2>&1 \
 
 # ------------------------------------------------------------- layer 1: the C#
 step "layer 1: C# under Add-Type, compiled as PS 5.1 would (net48 refs, C# 5)"
-out="$(bash "$CS/cscheck.sh" "$TARGET" 2>&1 | tail -4)"
+out="$(bash "$CSCHECK" "$TARGET" 2>&1 | tail -4)"
 echo "$out"
 grep -q "CS COMPILE OK" <<<"$out" || bad "C# does not compile"
 
@@ -100,13 +114,19 @@ PY
 
 python3 "$HERE/mkstub.py" "$TARGET" "$STUB" || bad "could not build the WASAPI stub"
 if [ -f "$STUB" ]; then
-    out="$(bash "$CS/cscheck.sh" "$STUB" 2>&1 | tail -2)"
+    out="$(bash "$CSCHECK" "$STUB" 2>&1 | tail -2)"
     echo "$out" | tail -1
     grep -q "CS COMPILE OK" <<<"$out" || bad "the stubbed script's C# does not compile"
 fi
 
-javac -nowarn -d "$CLASSES" "$HERE/WireSink.java" "$SRC/Proto.java" "$SRC/Adpcm.java" \
-    || bad "could not compile the phone-side decoder"
+if command -v javac >/dev/null 2>&1; then
+    javac -nowarn -d "$CLASSES" "$HERE/WireSink.java" "$SRC/Proto.java" "$SRC/Adpcm.java" \
+        || bad "could not compile the phone-side decoder"
+else
+    "$JAVA" -jar "$ECJ" -source 8 -target 8 -proc:none -nowarn -d "$CLASSES" \
+        "$HERE/WireSink.java" "$SRC/Proto.java" "$SRC/Adpcm.java" \
+        || bad "ECJ could not compile the phone-side decoder"
+fi
 
 # ------------------------------------------------------------------ test bodies
 
@@ -138,7 +158,7 @@ wire() {
     socat -d -d "pty,raw,echo=0,link=$a" "pty,raw,echo=0,link=$b" >/dev/null 2>&1 &
     local sp=$!
     sleep 0.6
-    timeout 120 java -cp "$CLASSES" WireSink "$b" "$codec" "$chans" "$rate" "$chunkms" \
+    timeout 120 "$JAVA" -cp "$CLASSES" WireSink "$b" "$codec" "$chans" "$rate" "$chunkms" \
         "$wav" "$mode" "$partial" >"$FIX/$name.sink" 2>&1 &
     local jp=$!
     sleep 0.4
@@ -169,7 +189,7 @@ loopw() {
     socat -d -d "pty,raw,echo=0,link=$a" "pty,raw,echo=0,link=$b" >/dev/null 2>&1 &
     local sp=$!
     sleep 0.6
-    timeout 180 java -cp "$CLASSES" WireSink "$b" "$codec" "$chans" "$rate" "$chunkms" \
+    timeout 180 "$JAVA" -cp "$CLASSES" WireSink "$b" "$codec" "$chans" "$rate" "$chunkms" \
         "$wav" "$mode" 1 >"$FIX/$name.sink" 2>&1 &
     local jp=$!
     sleep 0.4

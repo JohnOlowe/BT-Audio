@@ -2,6 +2,7 @@ package com.example.ghosthand;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
@@ -30,7 +31,7 @@ public class MainActivity extends Activity {
         List<String> names = new ArrayList<>();
         names.add("ghost");
         names.add("hand");
-        hello.setText(String.join(" + ", names));
+        hello.setText(TextUtils.join(" + ", names));
     }
 
     static class Helper {

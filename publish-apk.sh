@@ -4,15 +4,15 @@
 #   bash publish-apk.sh [--apk FILE] [--debug-apk FILE] [--branch apk] [--remote origin]
 #                       [--no-push]
 #
-# Two APKs, one commit: the R8-shrunk release build (2.5 MB) and the unobfuscated debug
-# build (5.8 MB). Whichever you grab, it is the same app - same package, same key, same
-# versionCode - so either installs straight over the other. That is checked below, not
+# Two APKs, one commit: the R8-shrunk release build and the unshrunk/debuggable build.
+# Whichever you grab, it is the same app - same package, same key, same versionCode -
+# so either installs straight over the other. That is checked below, not
 # assumed: a mismatched pair would fail with INSTALL_FAILED_UPDATE_INCOMPATIBLE on the
 # phone, which is a bad place to find out.
 #
 # WHY A SEPARATE BRANCH
 # ---------------------
-# Both APKs together are ~7.6 MB and change on every build. Committing them to `main`
+# Both APKs change on every build. Committing them to the source branch
 # would add new blobs to history on every push, so `git clone` would hand you every APK
 # ever built, forever. Binary blobs do not delta-compress like source does, so that grows
 # without bound.
@@ -41,11 +41,11 @@ cd "$HERE"
 
 BRANCH="apk"
 REMOTE="origin"
-APK="app/build/app.apk"
-DEBUG_APK="app/build/app-debug.apk"
+APK="btaudio/build/btaudio.apk"
+DEBUG_APK="btaudio/build/btaudio-debug.apk"
 DEBUG_APK_GIVEN=0
-NAME="GhostHand.apk"
-DEBUG_NAME="GhostHand-debug.apk"
+NAME="btaudio.apk"
+DEBUG_NAME="btaudio-debug.apk"
 PUSH=1
 
 while [ $# -gt 0 ]; do
@@ -86,7 +86,7 @@ AAPT2="toolchain/vendor/aapt2"
 # A valid signature says nothing about whether R8 kept the code the framework reaches by
 # name - check that too, so a shrunk-away feature can never be published.
 for f in "$APK" ${DEBUG_APK:+"$DEBUG_APK"}; do
-  if ! python3 verify_apk.py "$f"; then
+  if ! python3 verify_apk.py "$f" --project btaudio; then
     echo "refusing to publish: $f is missing required classes or resources" >&2
     exit 1
   fi
@@ -118,8 +118,8 @@ fi
 # What "either installs over the other" actually means, in the order Android checks it:
 # the package name must match, the APK must not be a versionCode downgrade, and it must
 # be signed by the same certificate (a mismatch is INSTALL_FAILED_UPDATE_INCOMPATIBLE).
-# Everything else - the debuggable flag, R8 renaming every class, the 3 MB difference -
-# is irrelevant to the installer.
+# Everything else - including whether the APK is debuggable or R8-renamed - is
+# irrelevant to the installer.
 # `badging | grep -q` looks obvious and is a trap: grep -q exits at the first match,
 # aapt2 is killed by SIGPIPE, and `set -o pipefail` (set at the top) reports the whole
 # pipeline as failed - so a debuggable APK was reported as "debuggable=no" here.
@@ -161,6 +161,12 @@ fi
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 size_of()   { du -h "$1" | cut -f1; }
 bytes_of()  { stat -c%s "$1"; }
+dex_count() { python3 - "$1" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    print(sum(1 for name in z.namelist() if name.endswith('.dex')))
+PY
+}
 
 SHA256="$(sha256_of "$APK")"
 SIZE="$(size_of "$APK")"
@@ -173,9 +179,8 @@ if [ -n "$DEBUG_APK" ]; then
   DEBUG_SIZE="$(size_of "$DEBUG_APK")"
   APK_COUNT_WORD="two APKs"
 else
-  # (${VAR:-default} expands to the variable's *value* when it is set, not the word -
-  # which is how the generated README first read "exactly twoapp/build/app-debug.apk
-  # APK(s)". A second variable is clearer than nesting the same one twice.)
+  # Keep the generated artifact count explicit; it is easier to review than a nested
+  # parameter expansion in the README template.
   APK_COUNT_WORD="one APK"
 fi
 
@@ -183,36 +188,41 @@ fi
 BLOB="$(git hash-object -w "$APK")"
 [ -n "$DEBUG_APK" ] && DEBUG_BLOB="$(git hash-object -w "$DEBUG_APK")"
 
-# Which file is which is worth stating plainly: the debug build is the BIGGER one, so
-# "the smaller download" is the release build, not the safe fallback.
+# The release build is the shrunk artifact; the debug build stays unshrunk and debuggable.
+dex_description() {
+  if [ "$1" -eq 1 ]; then printf '1 dex file'; else printf '%s dex files' "$1"; fi
+}
+RELEASE_DEXES="$(dex_count "$APK")"
+RELEASE_DEX_DESCRIPTION="$(dex_description "$RELEASE_DEXES")"
 if [ -n "$DEBUG_APK" ]; then
-  APK_TABLE="| File | Size | Runs on | What it is | SHA-256 |
-|---|---|---|---|---|
-| \`$NAME\` | $SIZE | Android $(min_sdk "$APK")\+ | **release**, R8-shrunk and optimised, one dex file | \`$SHA256\` |
-| \`$DEBUG_NAME\` | $DEBUG_SIZE | Android $(min_sdk "$DEBUG_APK")\+ | **debug**, unshrunk: nothing renamed or removed, six dex files | \`$DEBUG_SHA256\` |
-
-Both are the same app - package \`$(pkg_name "$APK")\`, versionCode \`$(pkg_code "$APK")\`, signed
-by the same key - **so either installs straight over the other**, in either order, keeping
-your data. Two differences are worth knowing:
-
-* R8 renames and inlines things on its way to the smaller file. That is the point of it.
-* The debug build is unshrunk, so it carries whole libraries as separate dex files, and
-  Dalvik (Android 4.4) only ever loads the first one. That is why it declares Android
-  $(min_sdk "$DEBUG_APK") as its floor and the release build does not: the release build is a
-  single dex file and runs on 4.4."
-  INSTALL_LIST="git show FETCH_HEAD:$NAME > GhostHand.apk             # smaller, R8-shrunk
-git show FETCH_HEAD:$DEBUG_NAME > GhostHand-debug.apk  # bigger, unobfuscated"
+  DEBUG_DEXES="$(dex_count "$DEBUG_APK")"
+  DEBUG_DEX_DESCRIPTION="$(dex_description "$DEBUG_DEXES")"
+  APK_TABLE="| File | Size | Runs on | Build | DEX files | SHA-256 |
+|---|---|---|---|---:|---|
+| \`$NAME\` | $SIZE | Android $(min_sdk "$APK")+ | **release**, R8-shrunk | $RELEASE_DEXES | \`$SHA256\` |
+| \`$DEBUG_NAME\` | $DEBUG_SIZE | Android $(min_sdk "$DEBUG_APK")+ | **debug**, unshrunk/debuggable | $DEBUG_DEXES | \`$DEBUG_SHA256\` |"
+  VARIANT_NOTE="Both are the same app - package \`$(pkg_name "$APK")\`, versionCode \`$(pkg_code "$APK")\`, signed by the same key - so either installs straight over the other in either order, keeping your data. The release contains $RELEASE_DEX_DESCRIPTION; the debug build contains $DEBUG_DEX_DESCRIPTION. Each APK's Android version floor is listed in the table."
+  INSTALL_LIST="git show FETCH_HEAD:$NAME > $NAME             # release, R8-shrunk
+git show FETCH_HEAD:$DEBUG_NAME > $DEBUG_NAME  # debug, unshrunk/debuggable"
+  ADB_INSTALL_LINE="adb install -r $NAME        # or $DEBUG_NAME; either order works"
+  WHICH_ONE="* **Normal use or distribution:** \`$NAME\` is the R8-shrunk release build.
+* **Debugging or inspection:** \`$DEBUG_NAME\` is unshrunk and debuggable, so stack traces retain source class names.
+* **Android version support:** see each APK's \`Runs on\` entry in the table above."
 else
-  APK_TABLE="| File | Size | SHA-256 |
-|---|---|---|
-| \`$NAME\` | $SIZE | \`$SHA256\` |"
-  INSTALL_LIST="git show FETCH_HEAD:$NAME > GhostHand.apk"
+  APK_TABLE="| File | Size | Runs on | Build | DEX files | SHA-256 |
+|---|---|---|---|---:|---|
+| \`$NAME\` | $SIZE | Android $(min_sdk "$APK")+ | **release**, R8-shrunk | $RELEASE_DEXES | \`$SHA256\` |"
+  VARIANT_NOTE="This publish contains only the R8-shrunk release APK. It is signed with the stable project key; the minimum Android version and DEX count are shown in the table."
+  INSTALL_LIST="git show FETCH_HEAD:$NAME > $NAME"
+  ADB_INSTALL_LINE="adb install -r $NAME"
+  WHICH_ONE="* **Only artifact in this publish:** \`$NAME\` is the R8-shrunk release build.
+* **Android version support:** Android $(min_sdk "$APK")+ (API $(min_sdk "$APK")); see the table above. To publish the optional unshrunk/debuggable APK as well, build with \`bash build.sh --both\`."
 fi
 
 README_FILE="$(mktemp)"
 trap 'rm -f "$README_FILE"' EXIT
 cat > "$README_FILE" <<EOF
-# GhostHand - build artifacts (generated, do not edit)
+# BT Audio - build artifacts (generated, do not edit)
 
 This branch exists only to hand out the APKs. It is **replaced on every publish** and
 therefore always has exactly **one commit** and exactly **$APK_COUNT_WORD**.
@@ -221,13 +231,15 @@ clone would drag along every APK ever built.
 
 $APK_TABLE
 
+$VARIANT_NOTE
+
 ## Install
 
 \`\`\`bash
 git fetch origin $BRANCH
 $INSTALL_LIST
 
-adb install -r GhostHand.apk        # or GhostHand-debug.apk - either order works
+$ADB_INSTALL_LINE
 \`\`\`
 
 Every build is signed with the same key (\`keystore/damjay_debug.keystore\`), so a new
@@ -235,21 +247,13 @@ APK installs straight over the previous one - no uninstalling, no lost settings.
 
 ## Which one do I want
 
-* **Want it to be small, or you are shipping it:** \`$NAME\`.
-* **Something is behaving oddly and you want to see:**
-  \`$DEBUG_NAME\` - nothing is renamed or removed, so a stack trace points at real class
-  names and the accessibility service, encoder and protocol classes are all present as
-  written. It is the bigger download and it is slower, and it logs more.
-* **Download of the big one failing:** take \`$NAME\`. Same app, same key, smaller file -
-  and it is the one that runs on the oldest phones.
-* **Android 4.4:** take \`$NAME\`. The debug build will refuse to install there
-  (INSTALL_FAILED_OLDER_SDK) because it needs the platform's multi-dex loading.
+$WHICH_ONE
 
 ## Build them yourself
 
 \`\`\`bash
-bash build.sh                                 # setup + AndroidX + 63 unit tests + release APK
-bash build.sh --both                          # both APKs into app/build/
+bash build.sh                                 # setup + receiver unit tests + release APK
+bash build.sh --both                          # both APKs into btaudio/build/
 bash build.sh --publish                       # both, then replace this branch
 \`\`\`
 
@@ -269,7 +273,7 @@ if [ -n "$DEBUG_APK" ]; then
 fi
 TREE="$(printf '%s\n' "$TREE_LINES" | git mktree)"
 
-COMMIT_MSG="GhostHand $NAME @ $SOURCE_REV
+COMMIT_MSG="BT Audio $NAME @ $SOURCE_REV
 
 size:   $SIZE
 sha256: $SHA256

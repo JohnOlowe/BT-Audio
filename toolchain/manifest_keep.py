@@ -17,20 +17,21 @@ per component, run at dex time by toolchain/lib.sh.
 
 Why generating beats listing
 ----------------------------
-This file replaces a hand-written block in app/proguard.pro that opened with "keep them
-in sync with the manifest". The splash activity was added to the manifest and not to the
-list; R8 deleted it; the release APK shipped unable to launch (the debug APK, unshrunk,
-was fine, which is how it survived one device). A generated rule cannot be forgotten
-when a component is added - and verify_apk.py checks the *finished APK* against the
-manifest, so even bypassing this script gets caught.
+This file replaces hand-written project-specific keep rules that could drift from the
+manifest. An activity was added to a manifest but not to its rule list; R8 deleted it;
+the release APK shipped unable to launch (the unshrunk debug APK hid the problem on one
+device). A generated rule cannot be forgotten when a component is added - and
+verify_apk.py checks the *finished APK* against the manifest, so even bypassing this
+script gets caught.
 
 Usage:
-    python3 toolchain/manifest_keep.py [MANIFEST] [--out FILE]
+    python3 toolchain/manifest_keep.py [PROJECT_OR_MANIFEST] [--out FILE]
 
-With no arguments it uses the app's manifest and prints the rules to stdout. --out
-writes them to a file instead (that is how toolchain/lib.sh uses it, as a second
---pg-conf for R8). Exits 1 if the manifest has no <package> or no components
-(because both mean the parser is looking at the wrong file).
+A project directory may use the flat AndroidManifest.xml layout or
+src/main/AndroidManifest.xml. With no argument, the repository's btaudio project
+is used. --out writes the rules to a file instead of stdout (that is how
+ toolchain/lib.sh uses it as a second --pg-conf for R8). Exits 1 if the manifest
+has no package or no components.
 """
 
 import re
@@ -98,8 +99,8 @@ def rules_for(found):
 
 def main(argv):
     here = os.path.dirname(os.path.abspath(__file__))
-    default_manifest = os.path.join(here, "..", "app", "src", "main", "AndroidManifest.xml")
-    manifest, out = default_manifest, None
+    manifest = os.path.join(here, "..", "btaudio", "AndroidManifest.xml")
+    out = None
     args = list(argv[1:])
     while args:
         arg = args.pop(0)
@@ -110,6 +111,14 @@ def main(argv):
             out = args.pop(0)
         else:
             manifest = arg
+
+    if os.path.isdir(manifest):
+        project = manifest
+        candidates = (
+            os.path.join(project, "src", "main", "AndroidManifest.xml"),
+            os.path.join(project, "AndroidManifest.xml"),
+        )
+        manifest = next((p for p in candidates if os.path.isfile(p)), candidates[-1])
 
     try:
         text = open(manifest, encoding="utf-8").read()

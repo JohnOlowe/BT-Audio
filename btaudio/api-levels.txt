@@ -1,0 +1,25 @@
+# API-gated Android framework symbols used by the BT Audio receiver.
+#
+# Each entry names one symbol absent at minSdk 24. Matching code must be behind
+# an SDK_INT check; newer classes live in ApiXXCompat helpers so Android 7 can
+# load the service without resolving types added later. check_api.py rejects
+# stale entries.
+#
+# Format: <class-or-class#member> <first-api> <guard / rationale>
+
+# Android 8.0 / API 26: notification channels, the channel-aware notification
+# constructor, and the modern audio-focus API. These are isolated in
+# Api26Compat and called only after ListenerService checks SDK_INT >= 26.
+# MainActivity also checks SDK_INT >= 26 before startForegroundService.
+android/app/NotificationChannel                                       26 Api26Compat.ensureNotificationChannel: ListenerService checks SDK_INT >= 26
+android/app/NotificationManager#createNotificationChannel              26 Api26Compat.ensureNotificationChannel: same guard
+android/app/Notification$Builder#*                                    26 Api26Compat.notificationBuilder: channel constructor is used only after SDK_INT >= 26
+android/media/AudioFocusRequest                                       26 Api26Compat: modern audio focus is isolated and called only after SDK_INT >= 26
+android/media/AudioFocusRequest$Builder                                26 Api26Compat: same
+android/media/AudioManager#requestAudioFocus                           26 Api26Compat: modern overload is isolated and called only after SDK_INT >= 26
+android/media/AudioManager#abandonAudioFocusRequest                    26 Api26Compat: modern overload is isolated and called only after SDK_INT >= 26
+android/app/Activity#startForegroundService                            26 MainActivity.startListening checks SDK_INT >= 26 before this call
+
+# Android 10 / API 29: typed foreground services. ListenerService selects
+# this overload only on API 29+, and uses the two-argument form below that.
+android/app/Service#startForeground                                    29 ListenerService.startInForeground checks SDK_INT >= 29 before typed overload

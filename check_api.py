@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """check_api.py -- does every framework call this app makes exist on the API it claims?
 
-    python3 check_api.py app/build/stage/classes --min-api 19 \
-        --android-jar toolchain/vendor/android-19.jar \
-        [--apk app/build/app.apk] [--allowlist api-levels.txt] [--list-guarded]
+    python3 check_api.py btaudio/build/stage/classes --min-api 24 \
+        --android-jar toolchain/vendor/android-24.jar \
+        [--apk btaudio/build/btaudio.apk] [--allowlist PROJECT/api-levels.txt] [--list-guarded]
 
 Why this exists
 ---------------
@@ -16,7 +16,7 @@ run time, on the device, in the one place you cannot debug.
 Android Studio answers this with lint's NewApi check, which reads annotations baked into
 the SDK. There is no lint here, so this does the same job from the artifact: it reads the
 constant pool of every compiled class, keeps the references into android.* (and java.*),
-and asks a real API 19 android.jar whether each one exists. Method and field lookups walk
+and asks a real android.jar for the project's minimum API whether each one exists. Method and field lookups walk
 the superclass and interface chain, exactly like the JVM's own resolution, so inherited
 methods are not false positives.
 
@@ -41,7 +41,7 @@ allowlist file with a reason and the API level they need:
 `java/lang/invoke/LambdaMetafactory` is skipped on purpose: lambdas are compiled to
 `invokedynamic` and then *desugared* by D8 for old API levels. The dex is checked
 separately (`--apk`) to prove that desugaring actually happened, because a lambda that
-survives into a min-api-19 dex is a NoClassDefFoundError on the device.
+survives into a pre-API-26 dex is a NoClassDefFoundError on the device.
 
 Exit code 0 = every reference is available, 1 = something is not (or an allowlist entry
 is stale), 2 = usage/IO error.
@@ -231,8 +231,7 @@ class Platform(object):
 # ------------------------------------------------------------------------ the app side
 
 IGNORED_PREFIXES = (
-    "damjay/",            # our own classes (and R)
-    "androidx/",          # libraries that declare their own minSdk (all of ours say 14)
+    "androidx/",          # libraries that declare their own minimum SDK
     "kotlin/",
 )
 
@@ -249,6 +248,21 @@ def app_classes(classes_dir):
         for name in sorted(files):
             if name.endswith(".class"):
                 yield os.path.join(root, name)
+
+
+def project_allowlist(classes_dir):
+    """Find api-levels.txt next to the Android project containing compiled classes."""
+    current = os.path.abspath(classes_dir)
+    while True:
+        manifest = (os.path.isfile(os.path.join(current, "AndroidManifest.xml"))
+                    or os.path.isfile(os.path.join(current, "src", "main", "AndroidManifest.xml")))
+        if manifest:
+            candidate = os.path.join(current, "api-levels.txt")
+            return candidate if os.path.isfile(candidate) else None
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
 
 
 # Compiled library classes are indexed here on first use: owner references that
@@ -352,9 +366,8 @@ def allowlist_match(entries, candidates):
 
 
 def short(class_name):
-    """damjay/control/ghosthand/guest/VideoDecoder$1 -> guest/VideoDecoder$1"""
-    prefix = "damjay/control/ghosthand/"
-    return class_name[len(prefix):] if class_name.startswith(prefix) else class_name
+    """Format class names consistently in diagnostics (without app-specific roots)."""
+    return class_name
 
 
 # ------------------------------------------------------------------------ dex sanity
@@ -381,7 +394,7 @@ _CALL_SITE_ID, _METHOD_HANDLE = 0x0007, 0x0008
 
 
 def check_dex(apk, min_api, problems):
-    """A min-api-19 dex must not contain invoke-custom: lambdas have to be desugared."""
+    """A pre-API-26 dex must not contain invoke-custom: lambdas have to be desugared."""
     with zipfile.ZipFile(apk) as archive:
         dexes = sorted(n for n in archive.namelist() if n.endswith(".dex"))
         total = 0
@@ -408,11 +421,10 @@ def main(argv):
         return 2
 
     classes_dir = argv[1]
-    min_api = 19
+    min_api = 24
     android_jar = None
     apk = None
-    allowlist_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                  "api-levels.txt")
+    allowlist_path = None
     list_guarded = False
 
     index = 2
@@ -431,6 +443,9 @@ def main(argv):
         else:
             print("unknown option: %s" % option, file=sys.stderr)
             return 2
+
+    if allowlist_path is None:
+        allowlist_path = project_allowlist(classes_dir)
 
     if not android_jar or not os.path.exists(android_jar):
         print("need a reference platform jar: --android-jar toolchain/vendor/"
@@ -487,11 +502,8 @@ def main(argv):
             if current is None or current in seen:
                 continue
             seen.add(current)
-            if current.startswith("damjay/"):
-                info = app.get(current)
-                if info is None:
-                    uncertain = True                 # generated at runtime; nothing to say
-                    continue
+            if current in app:
+                info = app[current]
                 members = info["methods"] if kind == "method" else info["fields"]
                 if (name, descriptor) in members:
                     return True, None               # our own method: fine
@@ -502,7 +514,7 @@ def main(argv):
                 # method merely inherited into it (the ECJ static-receiver-ref quirk
                 # above) is a runtime dependency on the platform: keep walking - to
                 # the library's own members (fine), its supers (maybe still library),
-                # or the framework (checked against the real android-19 jar).
+                # or the framework (checked against the project's real minimum-API jar).
                 info = lib_class(current)
                 if info is None:
                     uncertain = True                # unreadable: cannot disprove

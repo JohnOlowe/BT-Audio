@@ -1,0 +1,14 @@
+# Optional symbols observed in the AndroidX sample's dex.
+#
+# The harvest intentionally contains no kotlinx.coroutines runtime. These
+# ViewModel saved-state types are referenced by library code but the sample does
+# not create a ViewModel/SavedStateHandle, so those paths are not executed.
+# Keep the exceptions local to this fixture; they must not affect the BT Audio APK.
+kotlinx/coroutines/flow/MutableStateFlow   both  Unused lifecycle saved-state path; coroutine runtime is not included.
+androidx/core/os/BundleKt                  both  Optional AndroidX extension referenced only by saved-state support.
+
+# Unshrunk AndroidX also names these optional types; R8 removes those references
+# from the release APK. Keep the exemptions debug-only so they cannot mask a
+# release packaging regression.
+kotlinx/coroutines/**                      debug Optional coroutine paths in unshrunk AndroidX libraries.
+androidx/emoji2/text/flatbuffer/**         debug Emoji metadata reader is not initialized by this fixture.

@@ -321,7 +321,7 @@ dex() {
     # component cannot be forgotten. verify_apk.py independently checks the finished APK
     # against the same manifest, so even a bypass of this step gets caught.
     local manifest_keep
-    manifest_keep="$(mktemp "${TMPDIR:-/tmp}/ghosthand-manifest-keep.XXXXXX")"
+    manifest_keep="$(mktemp "${TMPDIR:-/tmp}/btaudio-manifest-keep.XXXXXX")"
     # TC_DIR, not GH_TOOLCHAIN: GH_TOOLCHAIN is the *vendor* directory; the generator
     # is a checked-in tool next to this script.
     python3 "$TC_DIR/manifest_keep.py" ${MANIFEST:+"$MANIFEST"} --out "$manifest_keep" \

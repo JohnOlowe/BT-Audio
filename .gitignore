@@ -10,4 +10,3 @@ build/
 *.idsig
 
 __pycache__/
-app/build/

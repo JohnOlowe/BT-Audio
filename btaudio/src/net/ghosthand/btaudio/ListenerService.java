@@ -1,7 +1,6 @@
 package net.ghosthand.btaudio;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -13,8 +12,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -60,7 +57,6 @@ public final class ListenerService extends Service {
     public static final String PREF_INSECURE = "insecure_rfcomm";
 
     private static final int NOTIF_ID = 1;
-    private static final String CHANNEL_ID = "btaudio";
     private static final int LOG_LINES = 60;
 
     /**
@@ -97,7 +93,8 @@ public final class ListenerService extends Service {
     private AudioEngine engine;
     private PowerManager.WakeLock wakeLock;
     private AudioManager audioManager;
-    private AudioFocusRequest focusRequest;
+    // Keep API-26-only types out of this class so Android 7 can load it.
+    private Object focusRequest;
     private volatile boolean stopRequested;
 
     public static State state() { return sState; }
@@ -166,12 +163,7 @@ public final class ListenerService extends Service {
         NotificationManager nm =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL_ID,
-                    "Bluetooth audio receiver",
-                    NotificationManager.IMPORTANCE_LOW);
-            ch.setDescription("Shows while the phone is listening for PC audio.");
-            ch.setShowBadge(false);
-            if (nm != null) nm.createNotificationChannel(ch);
+            Api26Compat.ensureNotificationChannel(nm);
         }
 
         Intent open = new Intent(this, MainActivity.class);
@@ -182,7 +174,7 @@ public final class ListenerService extends Service {
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, piFlags);
 
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, CHANNEL_ID)
+                ? Api26Compat.notificationBuilder(this)
                 : new Notification.Builder(this);
         Notification n = b.setContentTitle("Listening for PC audio")
                 .setContentText(SDP_NAME + " - waiting for a connection")
@@ -392,16 +384,7 @@ public final class ListenerService extends Service {
         if (audioManager == null) return;
         try {
             if (Build.VERSION.SDK_INT >= 26) {
-                focusRequest = new AudioFocusRequest.Builder(
-                        AudioManager.AUDIOFOCUS_GAIN)
-                        .setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(
-                                        AudioAttributes.CONTENT_TYPE_MUSIC)
-                                .build())
-                        .setOnAudioFocusChangeListener(focusListener)
-                        .build();
-                audioManager.requestAudioFocus(focusRequest);
+                focusRequest = Api26Compat.requestAudioFocus(audioManager, focusListener);
             } else {
                 audioManager.requestAudioFocus(focusListener,
                         AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
@@ -416,7 +399,7 @@ public final class ListenerService extends Service {
         if (audioManager == null) return;
         try {
             if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
-                audioManager.abandonAudioFocusRequest(focusRequest);
+                Api26Compat.abandonAudioFocus(audioManager, focusRequest);
                 focusRequest = null;
             } else {
                 audioManager.abandonAudioFocus(focusListener);
