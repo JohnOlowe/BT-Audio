@@ -26,7 +26,7 @@ Options:
   --api N        Android compile/target API (defaults to the project manifests)
   --source N     Java source level (default: 8)
   --quick        Skip unit tests
-  --windows      Also compile/test the Windows sender (requires .NET, PowerShell, socat)
+  --windows      Also compile/test the Windows sender (bootstraps .NET/PowerShell; needs socat)
   --no-windows   Do not auto-run Windows checks
   -h, --help     Show this help
 EOF
@@ -107,14 +107,21 @@ done
 
 if [ "$WINDOWS" = "auto" ]; then
   WINDOWS_CACHE="${BTAUDIO_WINDOWS_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/btaudio/windows}"
-  if [ -x "$WINDOWS_CACHE/dotnet" ] && command -v pwsh >/dev/null 2>&1 \
+  WINDOWS_DOTNET_READY=0
+  if [ -x "$WINDOWS_CACHE/dotnet" ]; then
+    WINDOWS_DOTNET_READY=1
+  elif command -v dotnet >/dev/null 2>&1; then
+    WINDOWS_SDKS="$(dotnet --list-sdks 2>/dev/null || true)"
+    grep -q '^8.0.425 ' <<<"$WINDOWS_SDKS" && WINDOWS_DOTNET_READY=1
+  fi
+  if [ "$WINDOWS_DOTNET_READY" = 1 ] && command -v pwsh >/dev/null 2>&1 \
      && command -v socat >/dev/null 2>&1; then
     WINDOWS="on"
   else
     WINDOWS="off"
     echo
-    echo "Windows sender checks skipped: the .NET SDK/reference assemblies, PowerShell,"
-    echo "and socat are not all installed. Use --windows to request them explicitly."
+    echo "Windows sender checks skipped: .NET SDK 8.0.425, PowerShell, and socat"
+    echo "are not all installed. Use --windows to bootstrap tools and request them."
   fi
 fi
 

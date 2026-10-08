@@ -1,0 +1,59 @@
+name: Windows sender build and wire tests
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "btaudio/windows/**"
+      - "pscheck/**"
+      - "build-all.sh"
+      - ".github/workflows/windows-sender.yml"
+  pull_request:
+    paths:
+      - "btaudio/windows/**"
+      - "pscheck/**"
+      - "build-all.sh"
+      - ".github/workflows/windows-sender.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-sender:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BTAUDIO_WINDOWS_CACHE: ${{ runner.temp }}/btaudio/windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.425
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install virtual serial-port tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes socat
+
+      - name: Prepare pinned Windows test tools
+        run: bash btaudio/windows/prepare-tools.sh ensure
+
+      - name: Compile the PowerShell Add-Type C# as C# 5 / .NET Framework 4.8
+        run: bash btaudio/windows/cscheck.sh
+
+      - name: Run PowerShell sender protocol tests
+        run: bash btaudio/windows/pscheck.sh
+
+      - name: Compile GUI and run phone-decoder integration tests
+        run: bash pscheck/guicheck.sh
+
+      - name: Remove downloaded tool cache and generated fixtures
+        if: always()
+        run: bash btaudio/windows/prepare-tools.sh clean

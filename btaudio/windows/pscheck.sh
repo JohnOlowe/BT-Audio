@@ -46,7 +46,9 @@ ECJ="$TOOLCHAIN/ecj.jar"
 [ -x "$JAVA" ] || JAVA="$(command -v java || true)"
 export BTAUDIO_WINDOWS_CACHE="$CS"
 export DOTNET_ROOT="$CS"
-export PATH="$CS:$HOME/.dotnet/tools:$PATH"
+export DOTNET_CLI_HOME="$CS/dotnet-cli"
+export NUGET_PACKAGES="$CS/nuget"
+export PATH="$CS/pwsh:$CS:$HOME/.dotnet/tools:$PATH"
 
 fails=0
 step() { printf '\n=== %s ===\n' "$*"; }
@@ -68,12 +70,8 @@ if ! command -v javac >/dev/null 2>&1; then
         exit 2
     }
 fi
-# The PowerShell tool shim needs the cached .NET host. cscheck.sh bootstraps it.
-[ -x "$CS/dotnet" ] && [ -d "$CS/host/fxr" ] || bash "$CSCHECK" bootstrap
-command -v pwsh >/dev/null 2>&1 || {
-    echo "installing PowerShell 7.4.6 ..."
-    "$CS/dotnet" tool install --global PowerShell --version 7.4.6 >/dev/null 2>&1
-}
+# Reuse any provisioned SDK, filling the dedicated external cache if needed.
+bash "$HERE/prepare-tools.sh" ensure
 command -v pwsh >/dev/null 2>&1 \
     && echo "pwsh $(pwsh -NoProfile -c '$PSVersionTable.PSVersion.ToString()' 2>/dev/null)" \
     || bad "could not obtain a PowerShell runtime"

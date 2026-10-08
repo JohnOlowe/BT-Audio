@@ -65,10 +65,12 @@ from their own locations, so they work from a fresh clone and from any current
 working directory.
 
 `build-all.sh` includes both samples because they exercise the compiler and
-AndroidX resource/link path. The optional Windows tests need a .NET SDK with
-.NET Framework 4.8 reference assemblies, PowerShell, and `socat`. In auto mode
-they are skipped with a note when those host tools are absent; `--windows`
-requests them explicitly.
+AndroidX resource/link path. `build-all.sh --windows` also bootstraps the pinned
+.NET SDK, .NET Framework 4.8 reference assemblies, and PowerShell into an
+external cache, then runs the Windows sender and GUI wire tests (requires
+`socat`, Python, a JDK, and network access for the first setup). Use
+`bash btaudio/windows/prepare-tools.sh clean` to remove the downloaded tools and
+generated harness files; it leaves source and checked-in binaries untouched.
 
 For user-facing Windows setup and sender controls, see [README-WINDOWS.md](README-WINDOWS.md).
 For individual compiler stages and toolchain provenance, see

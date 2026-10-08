@@ -260,10 +260,20 @@ with the first 50 ms exempt because IMA ADPCM always climbs from predictor 0 -
 that warm-up peaks at frame 6 on both channels of the test signal and is inherent
 to the codec, not a defect.
 
-Setup is self-healing - `btaudio/windows/cscheck.sh` caches the SDK and reference assemblies
-outside the checkout, and `btaudio/windows/pscheck.sh` installs PowerShell 7.4.6 as a pinned
-global tool (unpinned installs of that tool are currently broken upstream).
-`socat`, `python3` and a JDK must already be present.
+Bootstrap and cleanup are explicit, and the same setup is invoked by the harnesses:
+
+```bash
+bash btaudio/windows/prepare-tools.sh ensure
+bash btaudio/windows/pscheck.sh
+bash pscheck/guicheck.sh
+bash btaudio/windows/prepare-tools.sh clean
+```
+
+The setup reuses .NET SDK 8.0.425 if installed; otherwise it downloads the pinned SDK
+and verifies its SHA-512 before extraction. It fetches the .NET Framework 4.8 reference
+assemblies and, only when needed, installs pinned PowerShell 7.4.6 into the external
+cache. `clean` removes that cache plus ignored harness outputs, not source or checked-in
+binaries. `socat`, `python3`, and a JDK must already be present.
 
 Bugs these harnesses caught that reading the code would not have:
 

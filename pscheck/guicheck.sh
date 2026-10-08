@@ -38,7 +38,9 @@ ECJ="$TOOLCHAIN/ecj.jar"
 [ -x "$JAVA" ] || JAVA="$(command -v java || true)"
 export BTAUDIO_WINDOWS_CACHE="$CS"
 export DOTNET_ROOT="$CS"
-export PATH="$CS:$PATH"
+export DOTNET_CLI_HOME="$CS/dotnet-cli"
+export NUGET_PACKAGES="$CS/nuget"
+export PATH="$CS/pwsh:$CS:$PATH"
 CSC="$CS/sdk/8.0.425/Roslyn/bincore/csc.dll"
 
 fails=0
@@ -53,7 +55,7 @@ if ! command -v javac >/dev/null 2>&1; then
         exit 2
     }
 fi
-[ -x "$CS/dotnet" ] && [ -d "$CS/host/fxr" ] || bash "$CSCHECK" bootstrap
+bash "$ROOT/btaudio/windows/prepare-tools.sh" ensure
 mkdir -p "$FIX" "$CLASSES" "$GUI_OUT"
 
 # ------------------------------------------------------- layer 1: build for Windows
